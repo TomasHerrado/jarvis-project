@@ -1,0 +1,8 @@
+python-core/venv/
+python-core/__pycache__/
+python-core/.env
+node_modules/
+dist/
+target/
+*.pyc
+.DS_Store
