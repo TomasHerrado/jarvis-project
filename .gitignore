@@ -6,3 +6,7 @@ dist/
 target/
 *.pyc
 .DS_Store
+
+models/piper-voices/*.onnx
+models/piper-voices/*.onnx.json
+*.wav
