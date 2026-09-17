@@ -12,6 +12,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from automation.skills import ejecutar_skill
 from ai.intent_parser import interpretar
+from ai.personality import reformular_respuesta, responder_conversacion
 from memory.database import inicializar_db, guardar_interaccion, obtener_historial_reciente
 
 SAMPLE_RATE = 16000
@@ -28,6 +29,10 @@ print("Cargando modelos (esto pasa una sola vez al arrancar)...")
 whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
 tts_voice = PiperVoice.load(TTS_MODEL_PATH)
 inicializar_db()
+
+print("Precalentando modelos de Ollama (puede tardar un rato la primera vez)...")
+interpretar("hola")  # fuerza a Ollama a cargar el modelo grande en memoria
+reformular_respuesta("hola", "prueba")  # ídem con el modelo chico
 print("Listo. Jarvis está en línea.\n")
 
 
@@ -100,15 +105,14 @@ def procesar_comando(texto):
     params = resultado.get("params", {})
 
     if not nombre_skill:
-        respuesta = f"No estoy seguro de qué acción hacer con eso. Dijiste: {texto}"
+        respuesta = responder_conversacion(texto)
         guardar_interaccion(texto, None, {}, respuesta)
         return respuesta
 
     params_limpios = limpiar_params(params)
-    respuesta = ejecutar_skill(nombre_skill, **params_limpios)
-    guardar_interaccion(texto, nombre_skill, params_limpios, respuesta)
-    return respuesta
-
+    respuesta_cruda = ejecutar_skill(nombre_skill, **params_limpios)
+    guardar_interaccion(texto, nombre_skill, params_limpios, respuesta_cruda)
+    return reformular_respuesta(texto, respuesta_cruda)
 
 if __name__ == "__main__":
     while True:
@@ -120,8 +124,8 @@ if __name__ == "__main__":
         print(f'Vos dijiste: "{texto_usuario}"')
 
         texto_lower = texto_usuario.lower()
-        if any(palabra in texto_lower for palabra in ("salir", "chau", "terminar")):
-            hablar("Chau Tomas, nos vemos.")
+        if any(palabra in texto_lower for palabra in ("salir", "salí", "chau", "chao", "terminar", "adiós", "adios")):
+            hablar("Nos vemos.")
             break
 
         respuesta = procesar_comando(texto_usuario)

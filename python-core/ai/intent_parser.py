@@ -76,7 +76,7 @@ def interpretar(texto_usuario: str, historial: list = None) -> dict:
     }
 
     try:
-        response = requests.post(OLLAMA_URL, json=payload, timeout=30)
+        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
         response.raise_for_status()
     except requests.RequestException as e:
         print(f"[intent_parser] Error contactando a Ollama: {e}")

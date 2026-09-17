@@ -11,7 +11,7 @@ que en la Etapa 3 le vamos a pasar al LLM para que sepa qué puede llamar.
 
 import subprocess
 import psutil
-
+import os
 
 def abrir_aplicacion(nombre: str) -> str:
     """Abre una aplicación conocida por su nombre común."""
@@ -28,11 +28,10 @@ def abrir_aplicacion(nombre: str) -> str:
         return f"No conozco una aplicación llamada '{nombre}' todavía."
 
     try:
-        subprocess.Popen(ejecutable, shell=True)
+        os.startfile(ejecutable)
         return f"Abriendo {nombre}."
-    except Exception as e:
-        return f"No pude abrir {nombre}: {e}"
-
+    except OSError as e:
+        return f"No pude abrir {nombre}: no la encontré en el sistema."
 
 def procesos_mas_pesados(cantidad: int = 5) -> str:
     """Devuelve los procesos que más CPU/RAM están usando."""
