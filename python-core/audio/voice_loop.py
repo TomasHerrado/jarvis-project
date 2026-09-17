@@ -12,6 +12,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from automation.skills import ejecutar_skill
 from ai.intent_parser import interpretar
+from memory.database import inicializar_db, guardar_interaccion, obtener_historial_reciente
 
 SAMPLE_RATE = 16000
 FRAME_DURATION_MS = 30
@@ -26,6 +27,7 @@ vad = webrtcvad.Vad(2)
 print("Cargando modelos (esto pasa una sola vez al arrancar)...")
 whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
 tts_voice = PiperVoice.load(TTS_MODEL_PATH)
+inicializar_db()
 print("Listo. Jarvis está en línea.\n")
 
 
@@ -81,12 +83,10 @@ def hablar(texto):
 
 
 def limpiar_params(params: dict) -> dict:
-    """Ollama a veces manda números como texto o strings vacíos en vez de
-    omitir el parámetro. Esto lo normaliza antes de llamar a la skill."""
     limpio = {}
     for clave, valor in params.items():
         if valor == "" or valor is None:
-            continue  # dejamos que la skill use su valor por defecto
+            continue
         if isinstance(valor, str) and valor.strip().isdigit():
             valor = int(valor)
         limpio[clave] = valor
@@ -94,15 +94,20 @@ def limpiar_params(params: dict) -> dict:
 
 
 def procesar_comando(texto):
-    resultado = interpretar(texto)
+    historial = obtener_historial_reciente(3)
+    resultado = interpretar(texto, historial)
     nombre_skill = resultado.get("skill")
     params = resultado.get("params", {})
 
     if not nombre_skill:
-        return f"No estoy seguro de qué acción hacer con eso. Dijiste: {texto}"
+        respuesta = f"No estoy seguro de qué acción hacer con eso. Dijiste: {texto}"
+        guardar_interaccion(texto, None, {}, respuesta)
+        return respuesta
 
     params_limpios = limpiar_params(params)
-    return ejecutar_skill(nombre_skill, **params_limpios)
+    respuesta = ejecutar_skill(nombre_skill, **params_limpios)
+    guardar_interaccion(texto, nombre_skill, params_limpios, respuesta)
+    return respuesta
 
 
 if __name__ == "__main__":
@@ -114,7 +119,8 @@ if __name__ == "__main__":
         texto_usuario = transcribir(path)
         print(f'Vos dijiste: "{texto_usuario}"')
 
-        if texto_usuario.lower().strip(".,! ") in ("salir", "chau", "terminar"):
+        texto_lower = texto_usuario.lower()
+        if any(palabra in texto_lower for palabra in ("salir", "chau", "terminar")):
             hablar("Chau Tomas, nos vemos.")
             break
 
