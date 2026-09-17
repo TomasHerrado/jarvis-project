@@ -6,6 +6,12 @@ import webrtcvad
 import keyboard
 from faster_whisper import WhisperModel
 from piper import PiperVoice
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from automation.skills import ejecutar_skill
+from ai.intent_parser import interpretar
 
 SAMPLE_RATE = 16000
 FRAME_DURATION_MS = 30
@@ -74,10 +80,29 @@ def hablar(texto):
     sd.wait()
 
 
+def limpiar_params(params: dict) -> dict:
+    """Ollama a veces manda números como texto o strings vacíos en vez de
+    omitir el parámetro. Esto lo normaliza antes de llamar a la skill."""
+    limpio = {}
+    for clave, valor in params.items():
+        if valor == "" or valor is None:
+            continue  # dejamos que la skill use su valor por defecto
+        if isinstance(valor, str) and valor.strip().isdigit():
+            valor = int(valor)
+        limpio[clave] = valor
+    return limpio
+
+
 def procesar_comando(texto):
-    # Placeholder: acá en la Etapa 3 vamos a conectar Ollama para que
-    # interprete el texto y decida una acción. Por ahora, solo repite.
-    return f"Escuché que dijiste: {texto}"
+    resultado = interpretar(texto)
+    nombre_skill = resultado.get("skill")
+    params = resultado.get("params", {})
+
+    if not nombre_skill:
+        return f"No estoy seguro de qué acción hacer con eso. Dijiste: {texto}"
+
+    params_limpios = limpiar_params(params)
+    return ejecutar_skill(nombre_skill, **params_limpios)
 
 
 if __name__ == "__main__":
