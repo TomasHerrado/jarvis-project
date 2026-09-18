@@ -11,7 +11,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from automation.skills import ejecutar_skill
-from ai.intent_parser import interpretar
+from ai.intent_parser import planificar
 from ai.personality import reformular_respuesta, responder_conversacion
 from memory.database import inicializar_db, guardar_interaccion, obtener_historial_reciente
 
@@ -31,8 +31,8 @@ tts_voice = PiperVoice.load(TTS_MODEL_PATH)
 inicializar_db()
 
 print("Precalentando modelos de Ollama (puede tardar un rato la primera vez)...")
-interpretar("hola")  # fuerza a Ollama a cargar el modelo grande en memoria
-reformular_respuesta("hola", "prueba")  # ídem con el modelo chico
+planificar("hola")
+reformular_respuesta("hola", "prueba")
 print("Listo. Jarvis está en línea.\n")
 
 
@@ -72,8 +72,18 @@ def guardar_wav(audio, path="temp.wav"):
     return path
 
 
+CONTEXTO_TRANSCRIPCION = (
+    "Tomas Herrado, Jarvis, calculadora, Spotify, Chrome, curriculum, Claude, Brave,"
+    "abrir aplicación, buscar archivos, procesos, RAM."
+)
+
+
 def transcribir(path):
-    segments, _ = whisper_model.transcribe(path, language="es")
+    segments, _ = whisper_model.transcribe(
+        path,
+        language="es",
+        initial_prompt=CONTEXTO_TRANSCRIPCION,
+    )
     return " ".join(segment.text for segment in segments).strip()
 
 
@@ -100,19 +110,43 @@ def limpiar_params(params: dict) -> dict:
 
 def procesar_comando(texto):
     historial = obtener_historial_reciente(3)
-    resultado = interpretar(texto, historial)
-    nombre_skill = resultado.get("skill")
-    params = resultado.get("params", {})
+    plan = planificar(texto, historial)
+    pasos = plan.get("pasos", [])
 
-    if not nombre_skill:
+    if not pasos:
         respuesta = responder_conversacion(texto)
         guardar_interaccion(texto, None, {}, respuesta)
         return respuesta
 
-    params_limpios = limpiar_params(params)
-    respuesta_cruda = ejecutar_skill(nombre_skill, **params_limpios)
-    guardar_interaccion(texto, nombre_skill, params_limpios, respuesta_cruda)
+    resultado_anterior = None
+    mensajes = []
+    ultimo_skill = None
+    ultimo_params = None
+
+    for paso in pasos:
+        nombre_skill = paso.get("skill")
+        params = limpiar_params(paso.get("params", {}))
+
+        # Reemplazamos "$anterior" por el dato real que dejó el paso previo
+        for clave, valor in list(params.items()):
+            if valor == "$anterior":
+                if isinstance(resultado_anterior, list) and resultado_anterior:
+                    params[clave] = resultado_anterior[0]
+                elif resultado_anterior:
+                    params[clave] = resultado_anterior
+                else:
+                    params[clave] = ""
+
+        resultado = ejecutar_skill(nombre_skill, **params)
+        mensajes.append(resultado["mensaje"])
+        resultado_anterior = resultado["dato"]
+        ultimo_skill = nombre_skill
+        ultimo_params = params
+
+    respuesta_cruda = " ".join(mensajes)
+    guardar_interaccion(texto, ultimo_skill, ultimo_params, respuesta_cruda)
     return reformular_respuesta(texto, respuesta_cruda)
+
 
 if __name__ == "__main__":
     while True:

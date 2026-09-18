@@ -1,19 +1,18 @@
 """
 Registro central de skills de Jarvis.
 
-Cada skill es una función que recibe argumentos con nombre (kwargs) y
-devuelve un string con el resultado, para que Jarvis lo pueda decir en voz alta.
-
-El diccionario SKILLS mapea nombre_de_skill -> función, y también guarda
-una descripción y el esquema de parámetros esperados. Este esquema es lo
-que en la Etapa 3 le vamos a pasar al LLM para que sepa qué puede llamar.
+Cada skill devuelve un dict: {"mensaje": str, "dato": Any}
+- "mensaje" es lo que Jarvis puede decir en voz alta.
+- "dato" es información reusable por un paso siguiente en un comando encadenado
+  (ej: la lista de archivos encontrados, para que el siguiente paso pueda abrir uno).
 """
 
+import os
 import subprocess
 import psutil
-import os
 
-def abrir_aplicacion(nombre: str) -> str:
+
+def abrir_aplicacion(nombre: str) -> dict:
     """Abre una aplicación conocida por su nombre común."""
     apps_conocidas = {
         "calculadora": "calc.exe",
@@ -25,15 +24,29 @@ def abrir_aplicacion(nombre: str) -> str:
 
     ejecutable = apps_conocidas.get(nombre.lower())
     if not ejecutable:
-        return f"No conozco una aplicación llamada '{nombre}' todavía."
+        return {"mensaje": f"No conozco una aplicación llamada '{nombre}' todavía.", "dato": None}
 
     try:
         os.startfile(ejecutable)
-        return f"Abriendo {nombre}."
-    except OSError as e:
-        return f"No pude abrir {nombre}: no la encontré en el sistema."
+        return {"mensaje": f"Abriendo {nombre}.", "dato": None}
+    except OSError:
+        return {"mensaje": f"No pude abrir {nombre}: no la encontré en el sistema.", "dato": None}
 
-def procesos_mas_pesados(cantidad: int = 5) -> str:
+
+def abrir_archivo(ruta: str) -> dict:
+    """Abre un archivo por su ruta completa, con el programa asociado."""
+    if not ruta or not os.path.exists(ruta):
+        return {"mensaje": f"No pude abrir el archivo, la ruta '{ruta}' no existe.", "dato": None}
+
+    try:
+        os.startfile(ruta)
+        nombre_archivo = os.path.basename(ruta)
+        return {"mensaje": f"Abriendo {nombre_archivo}.", "dato": ruta}
+    except OSError as e:
+        return {"mensaje": f"No pude abrir el archivo: {e}", "dato": None}
+
+
+def procesos_mas_pesados(cantidad: int = 5) -> dict:
     """Devuelve los procesos que más CPU/RAM están usando."""
     procesos = []
     for proc in psutil.process_iter(["name", "cpu_percent", "memory_percent"]):
@@ -44,42 +57,41 @@ def procesos_mas_pesados(cantidad: int = 5) -> str:
 
     top = sorted(procesos, key=lambda p: p["memory_percent"], reverse=True)[:cantidad]
 
-    lineas = [
-        f"{p['name']}: {p['memory_percent']:.1f}% de RAM"
-        for p in top
-    ]
-    return "Los procesos que más RAM consumen son: " + "; ".join(lineas)
+    lineas = [f"{p['name']}: {p['memory_percent']:.1f}% de RAM" for p in top]
+    mensaje = "Los procesos que más RAM consumen son: " + "; ".join(lineas)
+    return {"mensaje": mensaje, "dato": [p["name"] for p in top]}
 
 
-def buscar_archivos(nombre: str, carpeta_raiz: str = None) -> str:
+def buscar_archivos(nombre: str, carpeta_raiz: str = None) -> dict:
     """Busca archivos por nombre (parcial) dentro de una carpeta."""
-    import os
-
     if carpeta_raiz is None:
-        carpeta_raiz = os.path.expanduser("~")  # carpeta del usuario por defecto
+        carpeta_raiz = os.path.expanduser("~")
 
     encontrados = []
     for root, _, files in os.walk(carpeta_raiz):
         for f in files:
             if nombre.lower() in f.lower():
                 encontrados.append(os.path.join(root, f))
-        if len(encontrados) >= 10:  # cortamos para no tardar una eternidad
+        if len(encontrados) >= 10:
             break
 
     if not encontrados:
-        return f"No encontré archivos con '{nombre}' en {carpeta_raiz}."
+        return {"mensaje": f"No encontré archivos con '{nombre}' en {carpeta_raiz}.", "dato": []}
 
-    return f"Encontré {len(encontrados)} archivo(s): " + "; ".join(encontrados[:5])
+    mensaje = f"Encontré {len(encontrados)} archivo(s): " + "; ".join(encontrados[:5])
+    return {"mensaje": mensaje, "dato": encontrados}
 
 
-# Registro de skills disponibles.
-# El "schema" describe los parámetros para que, más adelante, el LLM
-# pueda generar la llamada correcta a partir de lenguaje natural.
 SKILLS = {
     "abrir_aplicacion": {
         "funcion": abrir_aplicacion,
         "descripcion": "Abre una aplicación del sistema por su nombre.",
         "parametros": {"nombre": "string - nombre de la app, ej: 'calculadora'"},
+    },
+    "abrir_archivo": {
+        "funcion": abrir_archivo,
+        "descripcion": "Abre un archivo específico por su ruta completa. Usar cuando el usuario quiere abrir algo que se encontró en un paso anterior (ej: 'buscá X y abrilo').",
+        "parametros": {"ruta": "string - ruta completa del archivo. Usar '$anterior' si se refiere al resultado del paso previo."},
     },
     "procesos_mas_pesados": {
         "funcion": procesos_mas_pesados,
@@ -97,13 +109,13 @@ SKILLS = {
 }
 
 
-def ejecutar_skill(nombre_skill: str, **kwargs) -> str:
+def ejecutar_skill(nombre_skill: str, **kwargs) -> dict:
     """Punto único de entrada para ejecutar cualquier skill por nombre."""
     skill = SKILLS.get(nombre_skill)
     if not skill:
-        return f"No existe una skill llamada '{nombre_skill}'."
+        return {"mensaje": f"No existe una skill llamada '{nombre_skill}'.", "dato": None}
 
     try:
         return skill["funcion"](**kwargs)
     except Exception as e:
-        return f"Error ejecutando {nombre_skill}: {e}"
+        return {"mensaje": f"Error ejecutando {nombre_skill}: {e}", "dato": None}

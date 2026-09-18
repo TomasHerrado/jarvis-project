@@ -1,7 +1,6 @@
 """
-Traduce texto en lenguaje natural a una llamada de skill concreta,
-usando un modelo local corrido con Ollama. Puede recibir historial
-reciente para entender referencias a comandos anteriores.
+Traduce texto en lenguaje natural a un PLAN de uno o más pasos (skills),
+usando un modelo local corrido con Ollama.
 """
 
 import json
@@ -35,21 +34,27 @@ def _construir_prompt(texto_usuario: str, historial: list = None) -> str:
 
     contexto_previo = _formatear_historial(historial)
 
-    return f"""Sos el módulo de interpretación de un asistente de voz llamado Jarvis.
-Tu única tarea es traducir lo que dice el usuario a UNA de las siguientes acciones (skills):
+    return f"""Sos el módulo de planificación de un asistente de voz llamado Jarvis.
+Tu tarea es traducir lo que dice el usuario a uno o más PASOS, cada uno una de estas acciones (skills):
 
 {descripcion_skills}
 
-Contexto de la conversación reciente (puede ser útil si el usuario hace referencia a algo anterior, como "hacelo de nuevo" o "y ahora"):
+Contexto de la conversación reciente:
 {contexto_previo}
 
 Reglas:
 - Respondé ÚNICAMENTE con un JSON válido, sin texto antes ni después, sin markdown.
-- El JSON debe tener esta forma exacta: {{"skill": "nombre_skill", "params": {{...}}}}
-- Si el usuario no pide ninguna acción reconocible, respondé: {{"skill": null, "params": {{}}}}
+- El JSON debe tener esta forma exacta: {{"pasos": [{{"skill": "nombre_skill", "params": {{...}}}}, ...]}}
+- Si el usuario pide UNA sola acción, "pasos" tiene un solo elemento.
+- Si el usuario encadena dos acciones con "y" (ej: "buscá X y abrilo"), generá dos pasos.
+- Para el segundo paso de un encadenado, si un parámetro debe usar el resultado del paso anterior (ej: el archivo que se acaba de buscar), poné el valor "$anterior" en ese parámetro, en vez de inventar un valor.
+- Si el usuario no pide ninguna acción reconocible (charla casual, saludo, agradecimiento), respondé: {{"pasos": []}}
 - Interpretá la intención aunque esté mal dicho, con errores de transcripción, sin tildes, o con palabras de más.
 - Para nombres de aplicaciones o archivos, extraé solo el nombre relevante, sin artículos ni palabras sueltas.
-- Usá el contexto previo SOLO si el mensaje actual hace referencia clara a algo anterior (ej: "hacelo de nuevo", "y ahora qué"). Si el mensaje actual es una acción nueva y completa, ignorá el contexto.
+
+Ejemplo de comando encadenado:
+Usuario dijo: "buscá el archivo curriculum y abrilo"
+Respuesta: {{"pasos": [{{"skill": "buscar_archivos", "params": {{"nombre": "curriculum"}}}}, {{"skill": "abrir_archivo", "params": {{"ruta": "$anterior"}}}}]}}
 
 Usuario dijo ahora: "{texto_usuario}"
 
@@ -59,15 +64,15 @@ JSON:"""
 def _extraer_json(texto_crudo: str) -> dict:
     match = re.search(r"\{.*\}", texto_crudo, re.DOTALL)
     if not match:
-        return {"skill": None, "params": {}}
+        return {"pasos": []}
     try:
         return json.loads(match.group(0))
     except json.JSONDecodeError:
-        return {"skill": None, "params": {}}
+        return {"pasos": []}
 
 
-def interpretar(texto_usuario: str, historial: list = None) -> dict:
-    """Devuelve {"skill": nombre_o_None, "params": {...}}"""
+def planificar(texto_usuario: str, historial: list = None) -> dict:
+    """Devuelve {"pasos": [{"skill": ..., "params": {...}}, ...]}"""
     payload = {
         "model": MODEL,
         "prompt": _construir_prompt(texto_usuario, historial),
@@ -80,20 +85,22 @@ def interpretar(texto_usuario: str, historial: list = None) -> dict:
         response.raise_for_status()
     except requests.RequestException as e:
         print(f"[intent_parser] Error contactando a Ollama: {e}")
-        return {"skill": None, "params": {}}
+        return {"pasos": []}
 
     texto_generado = response.json().get("response", "")
-    return _extraer_json(texto_generado)
+    resultado = _extraer_json(texto_generado)
+    if "pasos" not in resultado:
+        resultado = {"pasos": []}
+    return resultado
 
 
 if __name__ == "__main__":
     pruebas = [
         "abrí la calculadora",
-        "abrime spotify porfa",
-        "¿qué procesos consumen más ram?",
-        "buscá el archivo curriculum tomas herrado",
+        "buscá el archivo curriculum y abrilo",
+        "qué procesos consumen más ram",
         "qué día es hoy",
     ]
     for texto in pruebas:
-        resultado = interpretar(texto)
+        resultado = planificar(texto)
         print(f'"{texto}" -> {resultado}')
