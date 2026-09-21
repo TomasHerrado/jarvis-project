@@ -51,6 +51,11 @@ Reglas:
 - Si el usuario no pide ninguna acción reconocible (charla casual, saludo, agradecimiento), respondé: {{"pasos": []}}
 - Interpretá la intención aunque esté mal dicho, con errores de transcripción, sin tildes, o con palabras de más.
 - Para nombres de aplicaciones o archivos, extraé solo el nombre relevante, sin artículos ni palabras sueltas.
+- Si una skill necesita un parámetro de tipo "ruta" (archivo completo) pero el usuario solo mencionó el NOMBRE del archivo sin ruta completa, generá primero un paso "buscar_archivos" con ese nombre, y el paso siguiente usando "$anterior" para la ruta — incluso si el usuario no dijo explícitamente "y" o "buscá". Ejemplo: "eliminá el archivo front" implica buscar_archivos + eliminar_archivo encadenados.
+
+Ejemplo de nombre de archivo sin ruta completa (sin decir explícitamente "y"):
+Usuario dijo: "eliminá el archivo front"
+Respuesta: {{"pasos": [{{"skill": "buscar_archivos", "params": {{"nombre": "front"}}}}, {{"skill": "eliminar_archivo", "params": {{"ruta": "$anterior"}}}}]}}
 
 Ejemplo de comando encadenado:
 Usuario dijo: "buscá el archivo curriculum y abrilo"

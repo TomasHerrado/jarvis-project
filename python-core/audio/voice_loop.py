@@ -10,10 +10,11 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from automation.skills import ejecutar_skill
+from automation.skills import ejecutar_skill, SKILLS
 from ai.intent_parser import planificar
 from ai.personality import reformular_respuesta, responder_conversacion
 from memory.database import inicializar_db, guardar_interaccion, obtener_historial_reciente
+from security.windows_auth import confirmar_con_password_windows
 
 SAMPLE_RATE = 16000
 FRAME_DURATION_MS = 30
@@ -22,6 +23,11 @@ SILENCE_LIMIT_MS = 1000
 SILENCE_FRAMES = SILENCE_LIMIT_MS // FRAME_DURATION_MS
 
 TTS_MODEL_PATH = "../models/piper-voices/es_AR-daniela-high.onnx"
+
+CONTEXTO_TRANSCRIPCION = (
+    "Tomas Herrado, Jarvis, calculadora, Spotify, Chrome, curriculum, "
+    "abrir aplicación, buscar archivos, procesos, RAM."
+)
 
 vad = webrtcvad.Vad(2)
 
@@ -72,12 +78,6 @@ def guardar_wav(audio, path="temp.wav"):
     return path
 
 
-CONTEXTO_TRANSCRIPCION = (
-    "Tomas Herrado, Jarvis, calculadora, Spotify, Chrome, curriculum, Claude, Brave,"
-    "abrir aplicación, buscar archivos, procesos, RAM."
-)
-
-
 def transcribir(path):
     segments, _ = whisper_model.transcribe(
         path,
@@ -108,6 +108,23 @@ def limpiar_params(params: dict) -> dict:
     return limpio
 
 
+def pedir_confirmacion(nombre_skill: str, detalle: str) -> bool:
+    hablar(f"Seguro que querés hacer esto: {nombre_skill.replace('_', ' ')} sobre {detalle}. Decime sí o no.")
+    audio = grabar_audio()
+    path = guardar_wav(audio, "confirmacion.wav")
+    respuesta = transcribir(path).lower()
+
+    if not any(palabra in respuesta for palabra in ("si", "sí", "dale", "confirmo", "hacelo")):
+        return False
+
+    hablar("Poné tu contraseña de Windows para confirmar.")
+    if not confirmar_con_password_windows():
+        hablar("Contraseña incorrecta, cancelo la acción.")
+        return False
+
+    return True
+
+
 def procesar_comando(texto):
     historial = obtener_historial_reciente(3)
     plan = planificar(texto, historial)
@@ -125,17 +142,29 @@ def procesar_comando(texto):
 
     for paso in pasos:
         nombre_skill = paso.get("skill")
-        params = limpiar_params(paso.get("params", {}))
+        params_originales = paso.get("params", {})
+        params = limpiar_params(params_originales)
 
-        # Reemplazamos "$anterior" por el dato real que dejó el paso previo
-        for clave, valor in list(params.items()):
+        referencia_vacia = False
+        for clave, valor in list(params_originales.items()):
             if valor == "$anterior":
                 if isinstance(resultado_anterior, list) and resultado_anterior:
                     params[clave] = resultado_anterior[0]
                 elif resultado_anterior:
                     params[clave] = resultado_anterior
                 else:
-                    params[clave] = ""
+                    referencia_vacia = True
+
+        if referencia_vacia:
+            mensajes.append("No encontré nada sobre lo que hacer eso, así que no sigo.")
+            break
+
+        skill_info = SKILLS.get(nombre_skill, {})
+        if skill_info.get("requiere_confirmacion"):
+            detalle = next(iter(params.values()), "")
+            if not pedir_confirmacion(nombre_skill, str(detalle)):
+                mensajes.append("Cancelado, no hice nada.")
+                break
 
         resultado = ejecutar_skill(nombre_skill, **params)
         mensajes.append(resultado["mensaje"])
