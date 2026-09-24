@@ -39,6 +39,8 @@ def reformular_respuesta(texto_usuario: str, respuesta_cruda: str) -> str:
 
 Ahora reformulá este resultado técnico: "{respuesta_cruda}"
 
+No inventes ni calcules nada que no esté literalmente en el resultado técnico.
+
 Tu respuesta:"""
 
     payload = {
@@ -49,7 +51,7 @@ Tu respuesta:"""
     }
 
     try:
-        response = requests.post(OLLAMA_URL, json=payload, timeout=30)
+        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
         response.raise_for_status()
         texto = response.json().get("response", "").strip()
         return texto if texto else respuesta_cruda
@@ -58,20 +60,16 @@ Tu respuesta:"""
         return respuesta_cruda
 
 
-if __name__ == "__main__":
-    pruebas = [
-        ("abrí calculadora", "Abriendo calculadora."),
-        ("qué procesos consumen más ram", "Los procesos que más RAM consumen son: chrome.exe: 12.3%; Code.exe: 8.1%"),
-        ("buscá el archivo curriculum", "No encontré archivos con 'curriculum' en C:\\Users\\tomas."),
-    ]
-    for texto, cruda in pruebas:
-        print(f'Cruda: "{cruda}"')
-        print(f'Con personalidad: "{reformular_respuesta(texto, cruda)}"')
-        print()
-
 def responder_conversacion(texto_usuario: str) -> str:
-    """Para cuando el usuario no está pidiendo una acción, solo charlando."""
-    prompt = f"""Sos Jarvis, el asistente de Tomas (a veces le decís "Tomi"). Tomas te dijo algo que no es un pedido de acción — puede ser un saludo, un agradecimiento, o un comentario. Respondé como un amigo, breve y natural, en una sola oración. Tuteá. Nunca digas "che", "hijito", "boludo", "loco".
+    """Para cuando el usuario no está pidiendo una acción reconocida, o el
+    sistema no entendió bien qué quiso decir."""
+    prompt = f"""Sos Jarvis, el asistente de Tomas (a veces le decís "Tomi"). Tomas te dijo algo que el sistema no reconoció como ninguna acción concreta.
+
+Regla ABSOLUTA: NUNCA inventes información, datos, personas, ni hechos que no te dieron. Si no entendiste bien lo que Tomas pidió, decilo directamente ("no te entendí bien" o "¿podés repetir eso?"). Jamás inventes una respuesta que suene plausible para algo que no sabés.
+
+Si el mensaje es claramente un saludo, agradecimiento, o comentario casual (sin pedido de información/acción), respondé como un amigo, breve, en una sola oración, tuteando. Nunca digas "che", "hijito", "boludo", "loco".
+
+Si el mensaje parece un pedido de información o acción pero no quedó claro cuál, respondé pidiendo que lo repita o aclare, sin inventar nada.
 
 Tomas dijo: "{texto_usuario}"
 
@@ -88,7 +86,19 @@ Tu respuesta:"""
         response = requests.post(OLLAMA_URL, json=payload, timeout=60)
         response.raise_for_status()
         texto = response.json().get("response", "").strip()
-        return texto if texto else "Dale."
+        return texto if texto else "No te entendí bien, ¿podés repetirlo?"
     except requests.RequestException as e:
         print(f"[personality] Error contactando a Ollama: {e}")
-        return "Dale."
+        return "No te entendí bien, ¿podés repetirlo?"
+
+
+if __name__ == "__main__":
+    pruebas = [
+        ("abrí calculadora", "Abriendo calculadora."),
+        ("qué procesos consumen más ram", "Los procesos que más RAM consumen son: chrome.exe: 12.3%; Code.exe: 8.1%"),
+        ("buscá el archivo curriculum", "No encontré archivos con 'curriculum' en C:\\Users\\tomas."),
+    ]
+    for texto, cruda in pruebas:
+        print(f'Cruda: "{cruda}"')
+        print(f'Con personalidad: "{reformular_respuesta(texto, cruda)}"')
+        print()

@@ -26,7 +26,9 @@ TTS_MODEL_PATH = "../models/piper-voices/es_AR-daniela-high.onnx"
 
 CONTEXTO_TRANSCRIPCION = (
     "Tomas Herrado, Jarvis, calculadora, Spotify, Chrome, curriculum, "
-    "abrir aplicación, buscar archivos, procesos, RAM."
+    "abrir aplicación, cerrar aplicación, buscar archivos, procesos, RAM, "
+    "pantalla, bloc de notas, ventana, escritorio, portapapeles, volumen, "
+    "brillo, batería, papelera, apagar, reiniciar, bloquear pantalla."
 )
 
 vad = webrtcvad.Vad(2)

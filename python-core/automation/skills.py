@@ -15,6 +15,7 @@ import pyperclip
 import pygetwindow as gw
 import screen_brightness_control as sbc
 from send2trash import send2trash
+from ai.vision import responder_sobre_pantalla
 
 APPS_CONOCIDAS = {
     "calculadora": "calc.exe",
@@ -332,6 +333,9 @@ def capturar_pantalla() -> dict:
     pyautogui.screenshot().save(ruta)
     return {"mensaje": f"Capturé la pantalla, la guardé en el escritorio como {nombre_archivo}.", "dato": ruta}
 
+def leer_pantalla(pregunta: str = "¿qué hay en esta pantalla?") -> dict:
+    respuesta = responder_sobre_pantalla(pregunta)
+    return {"mensaje": respuesta, "dato": respuesta}
 
 def abrir_editor_en_carpeta(ruta: str) -> dict:
     if not ruta or not os.path.isdir(ruta):
@@ -377,6 +381,7 @@ SKILLS = {
     "leer_portapapeles": {"funcion": leer_portapapeles, "descripcion": "Lee qué hay en el portapapeles.", "parametros": {}},
     "tomar_nota": {"funcion": tomar_nota, "descripcion": "Guarda una nota de texto dictada.", "parametros": {"texto": "string"}},
     "capturar_pantalla": {"funcion": capturar_pantalla, "descripcion": "Toma una captura de pantalla y la guarda en el escritorio.", "parametros": {}},
+    "leer_pantalla": {"funcion": leer_pantalla, "descripcion": "Lee el texto visible en la pantalla y responde una pregunta sobre eso: qué dice, qué error hay, de qué se trata, resumir el contenido.", "parametros": {"pregunta": "string (opcional) - qué quiere saber el usuario sobre la pantalla"},},
     "abrir_editor_en_carpeta": {"funcion": abrir_editor_en_carpeta, "descripcion": "Abre VS Code en una carpeta específica.", "parametros": {"ruta": "string"}},
 }
 
